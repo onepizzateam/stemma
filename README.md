@@ -22,7 +22,8 @@ Multi-party micropayment splits are economically broken on most EVM chains. Mona
 
 ## Live
 
-- App: local development at `http://localhost:3000`
+- Live app: [https://frontend-production-0c8d.up.railway.app](https://frontend-production-0c8d.up.railway.app)
+- MCP server: [https://stemma-mcp-server-production.up.railway.app](https://stemma-mcp-server-production.up.railway.app)
 - MCP service health endpoint: https://stemma-mcp-server-production.up.railway.app/health
 - Contract: `0x17d467d7C58a167637Ce2716BF457C4cDa29F382`
 - Explorer: https://testnet.monadexplorer.com/address/0x17d467d7C58a167637Ce2716BF457C4cDa29F382
@@ -49,4 +50,16 @@ npm run dev
 cd ../mcp-server
 npm install
 npm run dev
+```
+
+## Claude Desktop
+
+```json
+{
+  "mcpServers": {
+    "stemma": {
+      "url": "https://stemma-mcp-server-production.up.railway.app/mcp"
+    }
+  }
+}
 ```

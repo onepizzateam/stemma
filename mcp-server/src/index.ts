@@ -54,9 +54,36 @@ function readJson(request: IncomingMessage): Promise<unknown> {
 }
 
 const httpServer = createServer(async (request, response) => {
+  const parsedUrl = new URL(request.url ?? '/', 'http://localhost')
   if (request.url === '/' || request.url === '/health') {
     response.writeHead(200, { 'content-type': 'application/json' })
     response.end(JSON.stringify({ status: 'ok', service: 'stemma-mcp-server' }))
+    return
+  }
+  if (request.method === 'GET' && parsedUrl.pathname === '/discover') {
+    const targetUrl = parsedUrl.searchParams.get('url')
+    if (!targetUrl || !targetUrl.startsWith('https://')) {
+      response.writeHead(400, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({ error: 'url must be an https MCP endpoint' }))
+      return
+    }
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 5000)
+    try {
+      const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }
+      const initRes = await fetch(targetUrl, { method: 'POST', headers, signal: controller.signal, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'stemma-discovery', version: '1.0.0' } } }) })
+      if (!initRes.ok) throw new Error(`initialize returned HTTP ${initRes.status}`)
+      await initRes.json()
+      const sessionId = initRes.headers.get('mcp-session-id')
+      const listRes = await fetch(targetUrl, { method: 'POST', headers: { ...headers, ...(sessionId ? { 'mcp-session-id': sessionId } : {}) }, signal: controller.signal, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }) })
+      if (!listRes.ok) throw new Error(`tools/list returned HTTP ${listRes.status}`)
+      const listData = await listRes.json() as { result?: { tools?: Array<{ name: string; description?: string }> } }
+      response.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
+      response.end(JSON.stringify({ tools: listData?.result?.tools?.map((tool) => ({ name: tool.name, description: tool.description ?? '' })) ?? [] }))
+    } catch (error) {
+      response.writeHead(502, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({ error: 'Could not reach MCP server', detail: error instanceof Error ? error.message : String(error) }))
+    } finally { clearTimeout(timeout) }
     return
   }
   if (request.url !== '/mcp') { response.writeHead(404); response.end(); return }

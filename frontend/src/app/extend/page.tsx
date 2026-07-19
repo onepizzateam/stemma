@@ -19,6 +19,23 @@ export default function ExtendPage() {
   const [parentId, setParentId] = useState('0')
   const [split, setSplit] = useState('25')
   const [parent, setParent] = useState<Tool | null>(null)
+  const [discoveryUrl, setDiscoveryUrl] = useState('')
+  const [discoveredTools, setDiscoveredTools] = useState<Array<{ name: string; description: string }>>([])
+  const [discoveryError, setDiscoveryError] = useState('')
+  const [isDiscovering, setIsDiscovering] = useState(false)
+
+  async function discover() {
+    setDiscoveryError(''); setDiscoveredTools([]); setIsDiscovering(true)
+    try {
+      const res = await fetch(`https://stemma-mcp-server-production.up.railway.app/discover?url=${encodeURIComponent(discoveryUrl)}`)
+      const data = await res.json() as { error?: string; detail?: string; tools?: Array<{ name: string; description?: string }> }
+      if (!res.ok) { setDiscoveryError((data.error ?? 'Discovery failed') + (data.detail ? `: ${data.detail}` : '')); return }
+      setDiscoveredTools((data.tools ?? []).map((tool) => ({ name: tool.name, description: tool.description ?? '' })))
+    } catch (error) { setDiscoveryError(error instanceof Error ? error.message : String(error)) }
+    finally { setIsDiscovering(false) }
+  }
+
+  function selectDiscoveredTool(tool: { name: string; description: string }) { setName(tool.name); setDescription(tool.description); setEndpoint(discoveryUrl) }
 
   useEffect(() => {
     if (mode !== 'extension') return
@@ -39,6 +56,7 @@ export default function ExtendPage() {
 
   return <main className="container page"><form className="form stack" onSubmit={submit}>
     <h1>Register a tool</h1>
+    <section className="card discovery-panel"><h2>Discover tools from an MCP server</h2><div className="discovery-input"><input type="url" placeholder="https://your-mcp-server.railway.app/mcp" value={discoveryUrl} onChange={(event) => setDiscoveryUrl(event.target.value)} /><button type="button" className="btn btn-primary" onClick={discover} disabled={isDiscovering}>{isDiscovering ? 'Discovering...' : 'Discover →'}</button></div>{discoveryError && <p className="error">{discoveryError}</p>}{discoveredTools.length > 0 && <div className="discovery-tools">{discoveredTools.map((tool) => <button type="button" className="discovery-tool" key={tool.name} onClick={() => selectDiscoveredTool(tool)}><b>{tool.name}</b><span>{tool.description}</span></button>)}</div>}</section>
     <div style={{ display: 'flex', gap: 20 }}>
       <label><input type="radio" checked={mode === 'base'} onChange={() => setMode('base')} style={{ width: 'auto' }} /> New base tool</label>
       <label><input type="radio" checked={mode === 'extension'} onChange={() => setMode('extension')} style={{ width: 'auto' }} /> Extension of existing tool</label>
