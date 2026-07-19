@@ -1,0 +1,1 @@
+{"name":"stemma-mcp-server","version":"1.0.0","type":"module","scripts":{"build":"tsc","start":"node dist/index.js","dev":"tsx src/index.ts"},"dependencies":{"@modelcontextprotocol/sdk":"latest","dotenv":"latest","viem":"latest"},"devDependencies":{"@types/node":"latest","tsx":"latest","typescript":"latest"}}
