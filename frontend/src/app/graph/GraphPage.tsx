@@ -29,8 +29,11 @@ export default function GraphPage() {
     let cancelled = false
     const load = async () => {
       try {
-        const next = await readWithRetry(() =>
-          publicClient.readContract({ address: STEMMA_ADDRESS, abi: STEMMA_ABI, functionName: 'getAllTools' })
+        const count = await publicClient.readContract({ address: STEMMA_ADDRESS, abi: STEMMA_ABI, functionName: 'toolCount' })
+        const next = await Promise.all(
+          Array.from({ length: Number(count) }, (_, i) =>
+            publicClient.readContract({ address: STEMMA_ADDRESS, abi: STEMMA_ABI, functionName: 'getTool', args: [BigInt(i)] })
+          )
         ) as Tool[]
         if (!cancelled) { toolsRef.current = next; setTools(next) }
       } catch { if (!cancelled) setTools([]) }

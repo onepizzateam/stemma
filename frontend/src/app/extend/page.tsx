@@ -50,7 +50,7 @@ export default function ExtendPage() {
     if (mode === 'base') {
       writeContract({ address: STEMMA_ADDRESS, abi: STEMMA_ABI, functionName: 'registerTool', args: [name, description, endpoint, parseEther(price)] })
     } else {
-      writeContract({ address: STEMMA_ADDRESS, abi: STEMMA_ABI, functionName: 'registerExtension', args: [name, description, endpoint, parseEther(price), BigInt(parentId), BigInt(split)] })
+      writeContract({ address: STEMMA_ADDRESS, abi: STEMMA_ABI, functionName: 'registerExtension', args: [name, description, endpoint, parseEther(price), BigInt(parentId), BigInt(Number(split) * 100)] })
     }
   }
 

@@ -13,12 +13,32 @@ const insufficientBalance = (toolId: number) => ({
   isError: true,
 })
 
+function wordCount(text: string) {
+  const words = text.trim().split(/\s+/).filter(Boolean)
+  const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0)
+  return `Words: ${words.length} | Characters: ${text.length} | Sentences: ${sentences.length}`
+}
+
+function extractKeywords(text: string, n = 8) {
+  const stopwords = new Set(['the','a','an','and','or','but','in','on','at','to','for','of','with','by','from','is','are','was','were','be','been','has','have','had','that','this','it','as','not','also','its','their','they','we','you','i','he','she'])
+  const freq = new Map<string, number>()
+  text.toLowerCase().match(/\b[a-z]{3,}\b/g)?.forEach(w => { if (!stopwords.has(w)) freq.set(w, (freq.get(w) ?? 0) + 1) })
+  return [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([w]) => w).join(', ')
+}
+
+function toBullets(text: string) {
+  return text.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 10).map(s => `• ${s}`).join('\n')
+}
+
 function createMcpServer() {
   const server = new Server({ name: 'stemma-demo', version: '1.0.0' }, { capabilities: { tools: {} } })
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
       { name: 'summarize_text', description: 'Summarizes any text into 2 sentences. Costs 0.0010 MON per call (Tool #0 on Stemma).', inputSchema: { type: 'object', properties: { text: { type: 'string' }, caller_address: { type: 'string' } }, required: ['text', 'caller_address'] } },
       { name: 'summarize_text_pro', description: 'Summarizes text with configurable sentence count. 0.0015 MON/call. Extends Tool #0 with 25% upstream split (Tool #1 on Stemma).', inputSchema: { type: 'object', properties: { text: { type: 'string' }, sentences: { type: 'number', default: 3 }, caller_address: { type: 'string' } }, required: ['text', 'caller_address'] } },
+      { name: 'word_count', description: 'Counts words, characters, and sentences in any text. 0.0005 MON/call (Tool #2 on Stemma).', inputSchema: { type: 'object', properties: { text: { type: 'string' }, caller_address: { type: 'string' } }, required: ['text', 'caller_address'] } },
+      { name: 'extract_keywords', description: 'Extracts the top keywords from any text. 0.0008 MON/call (Tool #3 on Stemma).', inputSchema: { type: 'object', properties: { text: { type: 'string' }, count: { type: 'number', default: 8 }, caller_address: { type: 'string' } }, required: ['text', 'caller_address'] } },
+      { name: 'bullet_points', description: 'Converts any text into a bullet point list. 0.0010 MON/call (Tool #4 on Stemma).', inputSchema: { type: 'object', properties: { text: { type: 'string' }, caller_address: { type: 'string' } }, required: ['text', 'caller_address'] } },
     ],
   }))
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -35,6 +55,22 @@ function createMcpServer() {
       await recordCall(1n, caller)
       const count = typeof args?.sentences === 'number' ? args.sentences : 3
       return { content: [{ type: 'text' as const, text: extractSummary(String(args?.text ?? ''), count) }] }
+    }
+    if (request.params.name === 'word_count') {
+      if (!(await checkBalance(caller, 2n))) return insufficientBalance(2)
+      await recordCall(2n, caller)
+      return { content: [{ type: 'text' as const, text: wordCount(String(args?.text ?? '')) }] }
+    }
+    if (request.params.name === 'extract_keywords') {
+      if (!(await checkBalance(caller, 3n))) return insufficientBalance(3)
+      await recordCall(3n, caller)
+      const count = typeof args?.count === 'number' ? args.count : 8
+      return { content: [{ type: 'text' as const, text: extractKeywords(String(args?.text ?? ''), count) }] }
+    }
+    if (request.params.name === 'bullet_points') {
+      if (!(await checkBalance(caller, 4n))) return insufficientBalance(4)
+      await recordCall(4n, caller)
+      return { content: [{ type: 'text' as const, text: toBullets(String(args?.text ?? '')) }] }
     }
     throw new Error(`Unknown tool: ${request.params.name}`)
   })
@@ -55,6 +91,16 @@ function readJson(request: IncomingMessage): Promise<unknown> {
 
 const httpServer = createServer(async (request, response) => {
   const parsedUrl = new URL(request.url ?? '/', 'http://localhost')
+  const corsHeaders = {
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET, OPTIONS',
+    'access-control-allow-headers': 'Content-Type',
+  }
+  if (request.method === 'OPTIONS') {
+    response.writeHead(200, corsHeaders)
+    response.end()
+    return
+  }
   if (request.url === '/' || request.url === '/health') {
     response.writeHead(200, { 'content-type': 'application/json' })
     response.end(JSON.stringify({ status: 'ok', service: 'stemma-mcp-server' }))
@@ -63,7 +109,7 @@ const httpServer = createServer(async (request, response) => {
   if (request.method === 'GET' && parsedUrl.pathname === '/discover') {
     const targetUrl = parsedUrl.searchParams.get('url')
     if (!targetUrl || !targetUrl.startsWith('https://')) {
-      response.writeHead(400, { 'content-type': 'application/json' })
+      response.writeHead(400, { 'content-type': 'application/json', ...corsHeaders })
       response.end(JSON.stringify({ error: 'url must be an https MCP endpoint' }))
       return
     }
@@ -78,10 +124,10 @@ const httpServer = createServer(async (request, response) => {
       const listRes = await fetch(targetUrl, { method: 'POST', headers: { ...headers, ...(sessionId ? { 'mcp-session-id': sessionId } : {}) }, signal: controller.signal, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }) })
       if (!listRes.ok) throw new Error(`tools/list returned HTTP ${listRes.status}`)
       const listData = await listRes.json() as { result?: { tools?: Array<{ name: string; description?: string }> } }
-      response.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
+      response.writeHead(200, { 'content-type': 'application/json', ...corsHeaders })
       response.end(JSON.stringify({ tools: listData?.result?.tools?.map((tool) => ({ name: tool.name, description: tool.description ?? '' })) ?? [] }))
     } catch (error) {
-      response.writeHead(502, { 'content-type': 'application/json' })
+      response.writeHead(502, { 'content-type': 'application/json', ...corsHeaders })
       response.end(JSON.stringify({ error: 'Could not reach MCP server', detail: error instanceof Error ? error.message : String(error) }))
     } finally { clearTimeout(timeout) }
     return
